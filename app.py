@@ -1,5 +1,6 @@
 import datetime
 import io
+import time
 import urllib.parse
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -11,9 +12,44 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from pymongo import MongoClient
 
-# Configuração da Página
+# -----------------------------------------------------------------------------
+# 0. CONFIGURAÇÃO DE ACESSIBILIDADE E RESPONSIVIDADE (TELA ADAPTATIVA)
+# -----------------------------------------------------------------------------
 st.set_page_config(
-    page_title="Gestão Escolar - Tempo Integral", page_icon="📚", layout="wide"
+    page_title="Gestão Escolar - Tempo Integral",
+    page_icon="📚",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+# Estilização CSS Global para Acessibilidade (Títulos maiores, botões e contraste)
+st.markdown(
+    """
+    <style>
+        /* Aumentar e destacar os títulos principais das abas e seções */
+        h1, h2, h3 {
+            font-family: 'Arial', sans-serif !important;
+            font-weight: bold !important;
+            color: #1F4E78 !important;
+        }
+        h2 {
+            font-size: 28px !important;
+            border-bottom: 2px solid #1F4E78;
+            padding-bottom: 8px;
+            margin-top: 20px;
+        }
+        h3 {
+            font-size: 22px !important;
+        }
+        /* Melhorar legibilidade de botões e textos em dispositivos móveis */
+        .stButton>button {
+            font-size: 14px !important;
+            font-weight: bold !important;
+            border-radius: 6px !important;
+        }
+    </style>
+""",
+    unsafe_allow_html=True,
 )
 
 # -----------------------------------------------------------------------------
@@ -43,12 +79,37 @@ if colecao_usuarios.count_documents({}) == 0:
 
 
 # -----------------------------------------------------------------------------
-# 2. AUTENTICAÇÃO E SESSÃO
+# 2. AUTENTICAÇÃO E LOGOUT AUTOMÁTICO POR INATIVIDADE (15 minutos)
 # -----------------------------------------------------------------------------
+TIMEOUT_INATIVIDADE = 900  # 15 minutos em segundos
+
 if "autenticado" not in st.session_state:
     st.session_state["autenticado"] = False
     st.session_state["perfil"] = None
     st.session_state["usuario"] = None
+    st.session_state["ultimo_acesso"] = time.time()
+
+
+def verificar_inatividade():
+    if st.session_state["autenticado"]:
+        tempo_atual = time.time()
+        tempo_inativo = tempo_atual - st.session_state.get(
+            "ultimo_acesso", tempo_atual
+        )
+        if tempo_inativo > TIMEOUT_INATIVIDADE:
+            st.session_state["autenticado"] = False
+            st.session_state["perfil"] = None
+            st.session_state["usuario"] = None
+            st.warning(
+                "Sessão encerrada automaticamente por inatividade. Faça login"
+                " novamente."
+            )
+            st.rerun()
+        else:
+            st.session_state["ultimo_acesso"] = tempo_atual
+
+
+verificar_inatividade()
 
 
 def login(usuario, senha):
@@ -57,6 +118,7 @@ def login(usuario, senha):
         st.session_state["autenticado"] = True
         st.session_state["perfil"] = user["perfil"]
         st.session_state["usuario"] = user["usuario"]
+        st.session_state["ultimo_acesso"] = time.time()
         return True
     return False
 
@@ -98,9 +160,7 @@ def gerar_mensagem_whatsapp(nome_aluno, faltas, nome_escola="Nossa Escola"):
 # -----------------------------------------------------------------------------
 # 4. GERAÇÃO DE EXCEL FORMATADO E PROFISSIONAL
 # -----------------------------------------------------------------------------
-def gerar_excel_formatado(
-    nome_escola, turma_sel, periodo_str, df_dados
-):
+def gerar_excel_formatado(nome_escola, turma_sel, periodo_str, df_dados):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         df_dados.to_excel(
@@ -110,7 +170,6 @@ def gerar_excel_formatado(
         workbook = writer.book
         worksheet = writer.sheets["Frequencia"]
 
-        # Cabeçalho Principal (Informações da Escola)
         worksheet["A1"] = f"Escola: {nome_escola} (Tempo Integral)"
         worksheet["A1"].font = Font(
             name="Arial", size=14, bold=True, color="1F4E78"
@@ -122,7 +181,6 @@ def gerar_excel_formatado(
         worksheet["A3"] = f"Período: {periodo_str}"
         worksheet["A3"].font = Font(name="Arial", size=10, italic=True)
 
-        # Estilos para o cabeçalho da tabela (Linha 5)
         header_fill = PatternFill(
             start_color="1F4E78", end_color="1F4E78", fill_type="solid"
         )
@@ -136,7 +194,6 @@ def gerar_excel_formatado(
             bottom=Side(style="thin", color="D9D9D9"),
         )
 
-        # Formatação dos cabeçalhos das colunas
         for col_num in range(1, len(df_dados.columns) + 1):
             cell = worksheet.cell(row=5, column=col_num)
             cell.fill = header_fill
@@ -144,7 +201,6 @@ def gerar_excel_formatado(
             cell.alignment = align_center
             cell.border = thin_border
 
-        # Cores para o status de faltas
         fill_verde = PatternFill(
             start_color="D4EDDA", end_color="D4EDDA", fill_type="solid"
         )
@@ -160,21 +216,18 @@ def gerar_excel_formatado(
         )
         font_vermelho = Font(name="Arial", size=10, color="721C24", bold=True)
 
-        # Formatação das linhas de dados
         for row_idx in range(6, len(df_dados) + 6):
             for col_idx in range(1, len(df_dados.columns) + 1):
                 cell = worksheet.cell(row=row_idx, column=col_idx)
                 cell.border = thin_border
                 cell.font = Font(name="Arial", size=10)
 
-                # Alinhamentos específicos por coluna
                 col_name = df_dados.columns[col_idx - 1]
                 if "Nome" in col_name:
                     cell.alignment = align_left
                 else:
                     cell.alignment = align_center
 
-                # Destacar a coluna de Situação de Faltas
                 if "Situação" in col_name or "Faltas" in col_name:
                     val_str = str(cell.value)
                     if "Normal" in val_str or (
@@ -194,12 +247,11 @@ def gerar_excel_formatado(
                         cell.fill = fill_vermelho
                         cell.font = font_vermelho
 
-        # Ajuste automático da largura das colunas
         for col in worksheet.columns:
             max_len = 0
             col_letter = get_column_letter(col[0].column)
             for cell in col:
-                if cell.row >= 5:  # Considera a partir do cabeçalho
+                if cell.row >= 5:
                     if cell.value:
                         max_len = max(max_len, len(str(cell.value)))
             worksheet.column_dimensions[col_letter].width = max(max_len + 5, 15)
@@ -209,7 +261,7 @@ def gerar_excel_formatado(
 
 
 # -----------------------------------------------------------------------------
-# 5. FUNÇÃO DE GERAÇÃO DE PDF
+# 5. GERAÇÃO DE PDF
 # -----------------------------------------------------------------------------
 def gerar_pdf(nome_escola, turma_sel, data_inicial, data_atual, df_dados):
     buffer = io.BytesIO()
@@ -288,7 +340,7 @@ if st.sidebar.button("Sair (Logout)"):
 st.title("📋 Controle Escolar - Tempo Integral")
 
 # -----------------------------------------------------------------------------
-# ESTRUTURA DE ABAS
+# ESTRUTURA DE ABAS COM TÓPICOS DESTAQUE E ACESSIBILIDADE
 # -----------------------------------------------------------------------------
 aba0, aba1, aba2, aba3, aba4, aba5, aba6 = st.tabs(
     [
@@ -306,7 +358,11 @@ aba0, aba1, aba2, aba3, aba4, aba5, aba6 = st.tabs(
 # ABA 0: DASHBOARD GERAL
 # -----------------------------------------------------------------------------
 with aba0:
-    st.subheader("Visão Geral da Escola")
+    st.markdown("## 📈 Dashboard Geral da Escola")
+    st.markdown(
+        "Visão analítica e consolidada dos indicadores de frequência e merenda."
+    )
+    st.divider()
 
     total_alunos = colecao_alunos.count_documents({})
     total_turmas = colecao_turmas.count_documents({})
@@ -364,7 +420,11 @@ with aba0:
 # ABA 1: CHAMADA DIÁRIA
 # -----------------------------------------------------------------------------
 with aba1:
-    st.subheader("Registro de Frequência Diária")
+    st.markdown("## 📊 Chamada Diária por Turma")
+    st.markdown(
+        "Realize o registro de faltas e controle da merenda de tempo integral."
+    )
+    st.divider()
 
     col_escola, col_d1, col_d2 = st.columns([2, 1.5, 1.5])
     nome_escola_zap = col_escola.text_input(
@@ -385,11 +445,14 @@ with aba1:
 
         if alunos:
             st.markdown(
-                "**Legenda:** 🟢 **0-4 faltas:** Normal | 🟡 **5-6 faltas:** Atenção | 🔴 **7+ faltas:** Busca Ativa"
+                "**Legenda de Alertas:** 🟢 **0-4 faltas:** Normal | 🟡"
+                " **5-6 faltas:** Atenção | 🔴 **7+ faltas:** Busca Ativa"
             )
             st.divider()
 
-            col_n, col_f, col_a, col_m, col_w = st.columns([2.5, 1.2, 1.8, 2, 1.5])
+            col_n, col_f, col_a, col_m, col_w = st.columns(
+                [2.5, 1.2, 1.8, 2, 1.5]
+            )
             col_n.markdown("**Nome do Aluno**")
             col_f.markdown("**Acumulado**")
             col_a.markdown("**Lançar Falta**")
@@ -504,10 +567,16 @@ with aba1:
             st.info(f"Nenhum aluno cadastrado na turma {turma_sel}.")
 
 # -----------------------------------------------------------------------------
-# ABA 2: RELATÓRIOS & EXPORTAÇÃO EXCEL FORMATADO
+# ABA 2: RELATÓRIOS & EXPORTAÇÃO
 # -----------------------------------------------------------------------------
 with aba2:
-    st.subheader("Relatórios, Gráficos e Impressão")
+    st.markdown("## 📄 Relatórios & Gráficos")
+    st.markdown(
+        "Emita relatórios consolidados, exporte em Excel formatado ou PDF e"
+        " imprima."
+    )
+    st.divider()
+
     tab_rel1, tab_rel2 = st.tabs(
         ["📄 Visualizar & Exportar", "🖨️ Modo Impressão Direta"]
     )
@@ -603,9 +672,8 @@ with aba2:
                 st.divider()
                 col_b1, col_b2, col_b3 = st.columns(3)
 
-                # Botão de Download Excel Formatado (.xlsx)
                 excel_buffer = gerar_excel_formatado(
-                    nome_escola, turma_rel_sel, periodo_str, df_exibicao
+                    nome_escola, turma_sel, periodo_str, df_exibicao
                 )
                 col_b1.download_button(
                     label="📊 Baixar Excel Formatado",
@@ -616,7 +684,7 @@ with aba2:
 
                 pdf_buffer = gerar_pdf(
                     nome_escola,
-                    turma_rel_sel,
+                    turma_sel,
                     data_inicial,
                     data_atual,
                     df_exibicao,
@@ -659,7 +727,10 @@ with aba2:
 # ABA 3: TURMAS & ALUNOS
 # -----------------------------------------------------------------------------
 with aba3:
-    st.subheader("Gestão de Turmas e Alunos")
+    st.markdown("## 🏫 Gestão de Turmas e Alunos")
+    st.markdown("Cadastre novas turmas, alunos ou realize importações em massa.")
+    st.divider()
+
     t_aba1, t_aba2, t_aba3 = st.tabs(
         ["🏫 Cadastrar Turmas", "👨‍🎓 Cadastrar Alunos", "📂 Importação em Massa"]
     )
@@ -755,10 +826,13 @@ with aba3:
                 st.rerun()
 
 # -----------------------------------------------------------------------------
-# ABA 4: FICHA INDIVIDUAL DO ALUNO
+# ABA 4: FICHA DO ALUNO
 # -----------------------------------------------------------------------------
 with aba4:
-    st.subheader("Ficha Detalhada do Aluno")
+    st.markdown("## ⚙️ Ficha Detalhada do Aluno")
+    st.markdown("Atualize telefones e observações médicas/alimentares.")
+    st.divider()
+
     todos_alunos = list(colecao_alunos.find().sort("nome", 1))
 
     if todos_alunos:
@@ -790,10 +864,13 @@ with aba4:
         st.info("Nenhum aluno cadastrado.")
 
 # -----------------------------------------------------------------------------
-# ABA 5: HISTÓRICO DE MENSAGENS ENVIADAS (Zaps)
+# ABA 5: HISTÓRICO DE ZAPS
 # -----------------------------------------------------------------------------
 with aba5:
-    st.subheader("Histórico de Contatos via WhatsApp")
+    st.markdown("## 📨 Histórico de Contatos via WhatsApp")
+    st.markdown("Auditoria dos avisos enviados aos responsáveis.")
+    st.divider()
+
     envios = list(colecao_envios.find().sort("data_envio", -1).limit(100))
 
     if envios:
@@ -825,16 +902,20 @@ with aba5:
         st.info("Nenhum envio de mensagem registrado até o momento.")
 
 # -----------------------------------------------------------------------------
-# ABA 6: GERENCIAR USUÁRIOS (Restrito ao Master)
+# ABA 6: GERENCIAR USUÁRIOS
 # -----------------------------------------------------------------------------
 with aba6:
+    st.markdown("## 👥 Gerenciamento de Usuários")
+    st.markdown(
+        "Controle de acessos Master e Comum (Restrito ao perfil Master)."
+    )
+    st.divider()
+
     if st.session_state["perfil"] != "master":
         st.error(
             "⛔ Acesso Negado! Apenas o perfil **MASTER** pode gerenciar usuários."
         )
     else:
-        st.subheader("Gerenciamento de Usuários do Sistema")
-
         with st.form("form_novo_usuario"):
             u_nome = st.text_input("Novo Nome de Usuário")
             u_senha = st.text_input("Senha", type="password")
