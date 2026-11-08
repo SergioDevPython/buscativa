@@ -13,3 +13,11 @@ textColor = "#262730"
 
 # Fonte do texto (sans serif, serif ou monospace)
 font = "sans serif"
+
+
+[theme]
+primaryColor = "#1F4E78"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F4F6F9"
+textColor = "#262730"
+font = "sans serif"
