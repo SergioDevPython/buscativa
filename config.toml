@@ -1,0 +1,15 @@
+[theme]
+# Cor primária (usada em botões ativos, seletores e destaques)
+primaryColor = "#1F4E78"
+
+# Cor de fundo principal da página
+backgroundColor = "#FFFFFF"
+
+# Cor de fundo secundária (usada em barras laterais, cards e caixas de input)
+secondaryBackgroundColor = "#F4F6F9"
+
+# Cor principal do texto
+textColor = "#262730"
+
+# Fonte do texto (sans serif, serif ou monospace)
+font = "sans serif"
